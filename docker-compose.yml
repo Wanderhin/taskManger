@@ -1,0 +1,42 @@
+version: "3.7"
+
+services:
+
+  taskmanager_api:
+    build: .
+    container_name: taskmanager_api
+    restart: always
+    ports:
+      - "8080:8080"
+    networks:
+      - taskmanager_net
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://taskmanager_db:3306/taskmanager_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: Wanderhin0704
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "false"
+      APPLICATION_SECURITY_JWT_SECRET_KEY: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      APPLICATION_SECURITY_JWT_EXPIRATION: 86400000
+    depends_on:
+      - taskmanager_db
+
+  taskmanager_db:
+    image: mysql:8.0
+    container_name: taskmanager_db
+    restart: always
+    ports:
+      - "3307:3306"
+    networks:
+      - taskmanager_net
+    environment:
+      MYSQL_DATABASE: taskmanager_db
+      MYSQL_ROOT_PASSWORD: Wanderhin0704
+    volumes:
+      - taskmanager_db_data:/var/lib/mysql
+
+networks:
+  taskmanager_net:
+
+volumes:
+  taskmanager_db_data:

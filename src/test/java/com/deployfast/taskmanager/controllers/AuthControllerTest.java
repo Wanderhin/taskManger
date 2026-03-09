@@ -4,6 +4,10 @@ import com.deployfast.taskmanager.dtos.AuthDtos;
 import com.deployfast.taskmanager.entities.Role;
 import com.deployfast.taskmanager.services.interfaces.AuthService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +19,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -31,6 +36,20 @@ class AuthControllerTest {
     @MockBean private com.deployfast.taskmanager.security.jwt.JwtService jwtService;
     @MockBean private com.deployfast.taskmanager.services.implementations.UserDetailsServiceImpl userDetailsService;
     @MockBean private com.deployfast.taskmanager.security.jwt.JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        // --- CORRECTION ---
+        // On force le filtre mocké à faire suivre la requête
+        doAnswer(invocation -> {
+            ServletRequest request = invocation.getArgument(0);
+            ServletResponse response = invocation.getArgument(1);
+            FilterChain chain = invocation.getArgument(2);
+            chain.doFilter(request, response);
+            return null;
+        }).when(jwtAuthenticationFilter).doFilter(any(), any(), any());
+        // ------------------
+    }
 
     @Test
     @DisplayName("POST /auth/register - 201 avec token")
