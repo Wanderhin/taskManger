@@ -1,12 +1,12 @@
 #  TaskManager API
 
-> API REST de gestion de tâches sécurisée — Spring Boot 3.2 · JWT · Docker · CI/CD
+> API REST de gestion de tâches sécurisée — Spring Boot  · JWT · Docker · CI/CD
 
 [![CI/CD](https://github.com/<ton-username>/taskmanager/actions/workflows/main.yml/badge.svg)](https://github.com/<ton-username>/taskmanager/actions)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=<SONAR_PROJECT_KEY>&metric=alert_status)](https://sonarcloud.io/project/overview?id=<SONAR_PROJECT_KEY>)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=<SONAR_PROJECT_KEY>&metric=coverage)](https://sonarcloud.io/project/overview?id=<SONAR_PROJECT_KEY>)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=<SONAR_PROJECT_KEY>&metric=security_rating)](https://sonarcloud.io/project/overview?id=<SONAR_PROJECT_KEY>)
-![Java](https://img.shields.io/badge/Java-17-orange?logo=openjdk)
+![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.3-brightgreen?logo=springboot)
 ![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker)
 
