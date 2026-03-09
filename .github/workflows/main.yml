@@ -1,21 +1,56 @@
+# ============================================================
+#  CI/CD Pipeline – Docker Image avec SonarCloud, Trivy & OWASP
+#  Auteur  : <ton-nom>
+#  Version : 1.0.0
+#
+#  Séquence d'exécution :
+#  1. Checkout + configuration JDK / cache
+#  2. Tests unitaires + rapport de couverture JaCoCo
+#  3. Analyse qualité & sécurité SonarCloud
+#  4. Vérification du Security Rating (bloque si < A)
+#  5. Scan des dépendances OWASP Dependency-Check
+#  6. Build du JAR Maven
+#  7. Build de l'image Docker (locale, pour scan uniquement)
+#  8. Scan de vulnérabilités Trivy (bloque si CRITICAL/HIGH)
+#  9. Push de l'image finale vers Docker Hub
+# ============================================================
+
 name: Docker Image CI with SonarCloud, Trivy & OWASP
 
+# ── Déclencheurs ──────────────────────────────────────────────
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master" ]          # Déclenché à chaque push sur master
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master" ]          # Déclenché sur toute PR ciblant master
 
+# ── Jobs ──────────────────────────────────────────────────────
 jobs:
+
+  # =============================================================
+  #  JOB : build
+  #  Responsabilité : tester, analyser, scanner et publier
+  # =============================================================
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest          # Runner GitHub-hébergé (Ubuntu LTS)
 
     steps:
+
+      # ----------------------------------------------------------
+      # ÉTAPE 1 – Récupération du code source
+      # fetch-depth: 0 → historique complet requis par SonarCloud
+      #              pour calculer les nouvelles lignes de code
+      # ----------------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones désactivé pour meilleure analyse SonarCloud
+          fetch-depth: 0
 
+      # ----------------------------------------------------------
+      # ÉTAPE 2 – Installation de Java 17 (requis par Maven & Sonar)
+      # distribution 'temurin' = Eclipse Adoptium (open-source)
+      # cache: maven  → met en cache ~/.m2 entre les runs
+      # ----------------------------------------------------------
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -23,44 +58,83 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Cache SonarQube packages
+      # ----------------------------------------------------------
+      # ÉTAPE 3 – Cache des packages SonarCloud
+      # Évite de re-télécharger les plugins Sonar à chaque run
+      # ----------------------------------------------------------
+      - name: Cache SonarCloud packages
         uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
-      - name: Cache Maven packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
-      - name: Build and analyze
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=Wanderhin_taskManger
 
-      # ── Vérification du Security Rating SonarCloud ──
+      # ----------------------------------------------------------
+      # ÉTAPE 4 – Tests unitaires + couverture de code (JaCoCo)
+      # mvn clean verify :
+      #   · compile le projet
+      #   · exécute les tests
+      #   · génère target/site/jacoco/jacoco.xml
+      # ----------------------------------------------------------
+      - name: Run tests with coverage
+        run: mvn clean verify -DskipTests=false
+
+      # ----------------------------------------------------------
+      # ÉTAPE 5 – Analyse SonarCloud
+      # Prérequis (secrets GitHub à configurer) :
+      #   · SONAR_TOKEN        → token d'accès SonarCloud
+      #   · SONAR_PROJECT_KEY  → clé du projet (ex: org_project)
+      #   · SONAR_ORGANIZATION → slug de l'organisation SonarCloud
+      #
+      # -Dsonar.qualitygate.wait=true : bloque le pipeline si la
+      #   Quality Gate échoue (bugs, dette technique, couverture…)
+      # ----------------------------------------------------------
+      - name: SonarCloud Scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # Fourni automatiquement par GitHub
+          SONAR_TOKEN:  ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mvn sonar:sonar \
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }} \
+            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }} \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+
+      # ----------------------------------------------------------
+      # ÉTAPE 6 – Vérification du Security Rating SonarCloud
+      # L'API Sonar retourne : 1=A  2=B  3=C  4=D  5=E
+      # Le pipeline est bloqué si la note est B ou inférieure.
+      # Ajuste le seuil "-ge 2" selon ta politique de sécurité.
+      # ----------------------------------------------------------
       - name: Check Security Rating
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          sleep 10  # Attendre que l'analyse soit complète
+          # Laisser quelques secondes à SonarCloud pour finaliser l'analyse
+          sleep 10
 
           SECURITY_RATING=$(curl -s -u ${{ secrets.SONAR_TOKEN }}: \
             "https://sonarcloud.io/api/measures/component?component=${{ secrets.SONAR_PROJECT_KEY }}&metricKeys=security_rating" \
             | jq -r '.component.measures[0].value')
 
-          echo "Security Rating: $SECURITY_RATING (1=A, 2=B, 3=C, 4=D, 5=E)"
+          echo "Security Rating: $SECURITY_RATING  (1=A | 2=B | 3=C | 4=D | 5=E)"
 
+          # Bloque si la note est B (2) ou moins bonne
           if [ "$SECURITY_RATING" -ge 2 ]; then
-            echo "Security Rating is C or below - pipeline bloque !"
+            echo "❌ Security Rating insuffisant ($SECURITY_RATING) – pipeline bloqué !"
             exit 1
           fi
 
-          echo "Security Rating is acceptable"
+          echo "✅ Security Rating acceptable (A)"
 
-      # ── Analyse OWASP Dependency-Check ──
+      # ----------------------------------------------------------
+      # ÉTAPE 7 – Scan OWASP Dependency-Check
+      # Analyse les dépendances Maven contre la base NVD (CVE).
+      # -DfailBuildOnCVSS=7 → bloque le build si un CVE ≥ 7.0
+      # Les rapports HTML & JSON sont uploadés comme artefacts.
+      # ----------------------------------------------------------
       - name: OWASP Dependency-Check
         run: |
           mvn org.owasp:dependency-check-maven:check \
@@ -69,20 +143,31 @@ jobs:
 
       - name: Upload OWASP report
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always()                  # Upload même si l'étape précédente a échoué
         with:
           name: owasp-report
           path: target/dependency-check-report.*
-          retention-days: 15
+          retention-days: 15          # Conservé 15 jours dans GitHub
 
-      # ── Build du JAR ──
-      - name: Build with Maven
+      # ----------------------------------------------------------
+      # ÉTAPE 8 – Build du JAR (sans tests, déjà exécutés)
+      # Produit target/*.jar utilisé par le Dockerfile
+      # ----------------------------------------------------------
+      - name: Build JAR with Maven
         run: mvn clean package -DskipTests
 
+      # ----------------------------------------------------------
+      # ÉTAPE 9 – Configuration de Docker Buildx
+      # Buildx active le build multi-plateforme et le cache GHA
+      # ----------------------------------------------------------
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ── Build de l'image localement pour le scan Trivy ──
+      # ----------------------------------------------------------
+      # ÉTAPE 10 – Build Docker LOCAL (image temporaire pour Trivy)
+      # push: false + load: true → image stockée uniquement dans
+      # le daemon Docker du runner, non poussée vers un registry
+      # ----------------------------------------------------------
       - name: Build Docker image locally (for Trivy scan)
         uses: docker/build-push-action@v5
         with:
@@ -91,7 +176,13 @@ jobs:
           load: true
           tags: taskmanager-temp:latest
 
-      # ── Scan de vulnerabilites Trivy ──
+      # ----------------------------------------------------------
+      # ÉTAPE 11 – Scan de vulnérabilités Trivy
+      # Analyse l'image construite localement.
+      # exit-code: '1'    → bloque le pipeline si vulnérabilité trouvée
+      # ignore-unfixed    → ignore les CVE sans correctif disponible
+      # severity          → uniquement CRITICAL et HIGH
+      # ----------------------------------------------------------
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -104,20 +195,33 @@ jobs:
 
       - name: Upload Trivy report
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always()                  # Upload même en cas d'échec du scan
         with:
           name: trivy-report
           path: trivy-results.sarif
           retention-days: 15
 
-      # ── Connexion et push vers Docker Hub ──
+      # ----------------------------------------------------------
+      # ÉTAPE 12 – Authentification Docker Hub
+      # Prérequis (secrets GitHub à configurer) :
+      #   · DOCKER_USERNAME → nom d'utilisateur Docker Hub
+      #   · DOCKER_PASSWORD → token d'accès Docker Hub (pas le mdp)
+      # ----------------------------------------------------------
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Extract metadata
+      # ----------------------------------------------------------
+      # ÉTAPE 13 – Extraction des métadonnées Docker
+      # Génère automatiquement les tags selon le contexte Git :
+      #   · latest          → si push sur la branche par défaut
+      #   · <branch-name>   → nom de la branche
+      #   · pr-<number>     → numéro de la Pull Request
+      #   · <branch>-<sha>  → SHA court du commit (traçabilité)
+      # ----------------------------------------------------------
+      - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -128,12 +232,17 @@ jobs:
             type=ref,event=pr
             type=sha,prefix={{branch}}-
 
-      - name: Build and push Docker image
+      # ----------------------------------------------------------
+      # ÉTAPE 14 – Build final et push vers Docker Hub
+      # Utilise le cache GitHub Actions (GHA) pour accélérer les builds
+      # L'image est maintenant taguée et publiée de manière propre
+      # ----------------------------------------------------------
+      - name: Build and push Docker image to Docker Hub
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags:   ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to:   type=gha,mode=max
