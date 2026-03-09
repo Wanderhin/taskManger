@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────
 # STAGE 1 : Build
 # ─────────────────────────────────────────────
-FROM eclipse-temurin:17-jdk AS build
+FROM eclipse-temurin:21-jdk AS build
 
 WORKDIR /app
 
@@ -13,9 +13,9 @@ COPY src ./src
 RUN mvn clean package -DskipTests -B
 
 # ─────────────────────────────────────────────
-# STAGE 2 : Runtime (image legere)
+# STAGE 2 : Runtime (image légère)
 # ─────────────────────────────────────────────
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 
@@ -30,3 +30,5 @@ USER taskmanager
 EXPOSE 8080
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
+
+
