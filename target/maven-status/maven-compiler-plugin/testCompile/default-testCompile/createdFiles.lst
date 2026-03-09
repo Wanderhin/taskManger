@@ -1,0 +1,4 @@
+com\deployfast\taskmanager\controllers\AuthControllerTest.class
+com\deployfast\taskmanager\services\AuthServiceImplTest.class
+com\deployfast\taskmanager\services\TaskServiceImplTest.class
+com\deployfast\taskmanager\controllers\TaskControllerTest.class
